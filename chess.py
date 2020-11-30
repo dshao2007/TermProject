@@ -261,6 +261,12 @@ def keyPressed(app, event):
     if (event.key == 'f'):
         flipBoard(app)
         flipPieces(app)
+    if (event.key== 's'):
+        from tkinter.filedialog import asksaveasfile 
+        files = [('All Files', '*.*'),  
+                  ('Python Files', '*.py'), 
+                  ('Text Document', '*.txt')] 
+        file = asksaveasfile(filetypes = files, defaultextension = files) 
 
 def getPieceAtPosition(app, row, col):
     for piece in app.pieces:
