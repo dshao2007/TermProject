@@ -1,4 +1,4 @@
-# tp0
+# tp2
 # David Shao
 
 from cmu_112_graphics import *
@@ -6,6 +6,9 @@ from abc import ABC, abstractmethod
 import time
 import copy
 import sys
+
+
+
 
 class Piece(ABC):
     def __init__(self,row,col,name,color):
@@ -26,7 +29,7 @@ class Piece(ABC):
             return False
         if 0 <= newRow < 8 and 0 <= newCol <= 8 and self.isLegalMove(app, newRow, newCol):
             targetPiece = getPieceAtPosition(app, newRow, newCol)
-            if targetPiece and not simulate:
+            if targetPiece:
                 if targetPiece.color == self.color:
                     return False 
                 else:
@@ -44,19 +47,22 @@ class Piece(ABC):
                 otherColor = 'White'
             else:
                 otherColor = 'Black'
+            if simulate and targetPiece and targetPiece not in app.pieces:
+                app.pieces.append(targetPiece)
+
+
             if inCheck(app, otherColor):
                 if not simulate:
                     if checkMate(app, otherColor):
                         app.gameOver = True
                         if self.color == 'Black': 
-                            app.winner = 'White' 
-                            app.loser = 'Black'
-                        else:
-                            app.winner = 'Black'
+                            app.winner = 'Black' 
                             app.loser = 'White'
+                        else:
+                            app.winner = 'White'
+                            app.loser = 'Black'
                         print(f'{app.winner} checkmates {app.loser} ')
 
-                
 
 
             print(f'New Position: {newRow}, {newCol}')
@@ -189,6 +195,7 @@ class Queen(Piece):
         return False     
         
 def appStarted(app):
+    app.gameOver = False
     app.whiteTurn = True
     app.moves = []
     app.board = []
