@@ -7,6 +7,7 @@ import time
 import copy
 import sys
 import chess
+import gameAI
 
 class MyApp(App):
     def appStarted(self):
@@ -14,6 +15,9 @@ class MyApp(App):
         self.moves = []
         self.board = []
         self.chessGame = chess.ChessGame()
+        self.aiMode = False
+
+        self.ai = gameAI.ChessAI(self.chessGame, color='Black')
         self.canCastle = True
         # When a piece is clicked, an outline will be drawn around the piece
         self.outlineRow = None
@@ -29,6 +33,12 @@ class MyApp(App):
         self.images = {}
         self.initializeBoard()
         self.initializePieces()
+        self.okToShowGameOver = True
+        self.drawSplashScreen = True
+
+
+    def inFlippedView(self):
+        return not self.aiMode and not self.whiteTurn
 
     def initializeBoard(self):
         # initializes the board without pieces and with alternating color scheme
@@ -50,6 +60,7 @@ class MyApp(App):
         self.images['BlackBishop'] = self.loadImage('./images/pieces/bB.png')
         self.images['BlackKnight'] = self.loadImage('./images/pieces/bN.png')
         self.images['BlackRook'] = self.loadImage('./images/pieces/bR.png')
+
         self.images['BlackKing'] = self.loadImage('./images/pieces/bK.png')
 
         self.images['WhiteQueen'] = self.loadImage('./images/pieces/wQ.png')
@@ -79,7 +90,12 @@ class MyApp(App):
 
     def drawPieces(self,canvas):
         for piece in self.chessGame.getPieces():
-            x0,y0,x1,y1 = self.getCellBounds(piece.row,piece.col)
+            row, col = piece.row, piece.col
+            if self.inFlippedView():
+                row = chess.boardSize - 1 - row
+                col = chess.boardSize - 1 - col
+
+            x0,y0,x1,y1 = self.getCellBounds(row,col)
             midx = (x0 + x1) // 2
             midy = (y0 + y1) // 2
             imageKey = piece.color + piece.name
@@ -102,39 +118,83 @@ class MyApp(App):
             tempBoard[row][col] = self.board[len(self.board) - 1 - row][col]
         self.board = tempBoard
         '''
+        # have 600 millisecon delay of flipping board
         self.outlineRow = chess.boardSize - 1 - self.outlineRow
         self.outlineCol = chess.boardSize - 1 - self.outlineCol
 
 
     def keyPressed(self, event):
-        if (event.key == 'r') and self.gameOver:
+        if (event.key == 'R'):
             self.appStarted()
-
+        '''
         if (event.key== 's'):
             from tkinter.filedialog import asksaveasfile
             files = [('All Files', '*.*'),
                      ('Python Files', '*.py'),
                      ('Text Document', '*.txt')]
             file = asksaveasfile(filetypes = files, defaultextension = files)
-
+        '''
+        if event.key == 'S' and self.drawSplashScreen:
+            self.aiMode = False
+            self.drawSplashScreen = False
+        if event.key == 'A' and self.drawSplashScreen:
+            self.aiMode = True
+            self.drawSplashScreen = False
 
     def mousePressed(self, event):
         row,col = self.getCell(event.x, event.y)
         self.outlineRow = row
         self.outlineCol = col
+        if self.inFlippedView():
+            row = chess.boardSize - 1 - row
+            col = chess.boardSize - 1 - col
+        
         if self.selectedPiece:
-            if (self.whiteTurn and self.selectedPiece.color == 'White') or \
-               (not self.whiteTurn and self.selectedPiece.color == 'Black'):
+            if ((self.whiteTurn and self.selectedPiece.color == 'White') or \
+               (not self.whiteTurn and self.selectedPiece.color == 'Black')) and not self.aiMode:
                 if self.chessGame.movePiece(self.selectedPiece, row, col):
-                    self.flipBoard()
-                    self.chessGame.flipPieces()
-                    self.whiteTurn = not self.whiteTurn
                     self.moves.append((row,col,self.selectedPiece.color))
-                    return
+                    self.whiteTurn = not self.whiteTurn
+
+                    self.flipBoard()
+                     
+            if self.aiMode:
+                if (self.whiteTurn and self.selectedPiece.color == 'White'):
+                    if self.chessGame.movePiece(self.selectedPiece, row, col):
+                        self.moves.append((row,col,self.selectedPiece.color))
+                        self.whiteTurn = not self.whiteTurn
+                        move = self.ai.nextMove()
+                        if move is None:
+                            print("You win!")
+                            self.showMessage("Congrats, you win!!")
+                            return
+                        piece,AIrow,AIcol = move
+                        
+                        print("AI move: ", piece, AIrow,AIcol)
+                        print("current move# ", len(self.chessGame.moves))
+                    
+                        self.chessGame.movePiece(piece, AIrow, AIcol)
+                        if self.chessGame.gameOver:
+                            self.showMessage(self.chessGame.winner + " wins!")
+                        print(f'Score: {self.ai.getScore()}')
+                        self.outlineRow = AIrow
+                        self.outlineCol = AIcol
+                        self.whiteTurn = not self.whiteTurn
+                        return
 
         self.selectedPiece = self.chessGame.getPieceAtPosition(row, col)
 
+    def timerFired(self):
 
+        if self.chessGame.gameOver and self.okToShowGameOver:
+            self.showMessage(self.chessGame.winner + " wins!")
+            self.okToShowGameOver = False 
+        #if self.toFlip > 0:
+        #    self.toFlip -= 1
+        #    if self.toFlip == 0:
+
+            
+                   
     #similar to getCell from lecture, just without margins
     def getCell(self, x, y):
         return int(y/self.cellSize), int(x/self.cellSize)
@@ -170,7 +230,14 @@ class MyApp(App):
                                             fill=color,
                                             outline='black')
 
+    def drawInitialScreen(self,canvas):
+        canvas.create_text(self.width//2, self.height//2, text = 'Press A for AI Mode')
+        canvas.create_text(self.width//2, self.height//2 + 15, text = 'Press S for Single Player Mode With Flipped Board')
+
     def redrawAll(self, canvas):
+        if self.drawSplashScreen:
+            self.drawInitialScreen(canvas)
+            return 
         self.drawBoard(canvas)
         self.drawPieces(canvas)
         self.drawCoords(canvas)
