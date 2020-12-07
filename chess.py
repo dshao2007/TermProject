@@ -15,6 +15,7 @@ class Piece(ABC):
         self.col = col
         self.name = name
         self.color = color
+        self.numMoves = 0
 
     def getPosition(self):
         return (self.row, self.col)
@@ -40,11 +41,15 @@ class Piece(ABC):
         '''
         return False
 
-    def move(self, newRow, newCol):
+    def move(self, newRow, newCol, isUndo=False):
         ''' Move to a new position. This is called by the game object. '''
         self.row = newRow
         self.col = newCol
-
+        if isUndo:
+            self.numMoves -= 1
+        else:
+            self.numMoves += 1
+        
 
 class Bishop(Piece):
     def isLegalMove(self,game,newRow,newCol):
@@ -153,10 +158,99 @@ class King(Piece):
     def isLegalMove(self,game,newRow,newCol):
         if  abs(self.row - newRow) <= 1 and abs(self.col - newCol) <= 1:
             return True
+
+        if self.numMoves > 0:
+            return False
+
+        # Castle
+        if self.row != newRow:
+            return False
+        
+        if self.color == 'White':
+            castleRow = 7
+        else:
+            castleRow = 0
+
+        if newCol == 2:
+            rookCol = 0
+            noPiece = [1, 2, 3]
+            checkCol = 3
+        elif newCol == 6:
+            rookCol = 7
+            noPiece = [5, 6]
+            checkCol = 5
+        else:
+            return False
+            
+        if newRow == castleRow:
+            # make sure there are no game pieces in between
+            for col in noPiece:
+                if game.getPieceAtPosition(castleRow, col) is not None:
+                    return False
+    
+            # make sure King is not under Check
+            
+            # chcek if the current King position is in check
+            if game.inCheck(self.color):
+                return False
+
+            # check in-flight and final position are not in Check
+            for piece in game.pieces:
+                if piece.color != self.color and piece.isLegalMove(game, castleRow, checkCol):
+                    return False
+                # not under Check, when King is moved to the new location (self.row, newCol)
+                if piece.color != self.color and piece.isLegalMove(game, castleRow, newCol):
+                    return False
+
+            # find the Rook to move
+            piece = game.getPieceAtPosition(castleRow, rookCol)
+            if piece is None:
+                return False
+            if piece.name == 'Rook' and piece.numMoves == 0 and piece.color == self.color:
+                return True
+
         return False
 
+    # called after the King made a castle move
+    def handleCastleRookMove(self,game,oldCol):
+        # print("handle Castle Rook Move ", oldCol)
+        if self.col == 2:
+            col = 0
+            newCol = 3
+        elif self.col == 6:
+            col = 7
+            newCol = 5
+        else:
+            assert False, "not a castle move"
+
+        piece = game.getPieceAtPosition(self.row, col)
+        if piece:
+            piece.move(self.row, newCol)
+
+
+    # called after the King made a castle move
+    def handleCastleRookUndo(self,game,oldKingCol):
+        #print("handle Castle Rook Undo ", oldKingCol)
+
+        # this would be an undo of the castle
+        if oldKingCol == 2:
+            col = 3 # rook at col=3, move to 0 to undo
+            newCol = 0
+        elif oldKingCol == 6:
+            col = 5 # rook at col=5, move to 7
+            newCol = 7
+        else:
+            assert False, "not a castle move"
+
+        piece = game.getPieceAtPosition(self.row, col)
+        if piece:
+            piece.move(self.row, newCol, True)
+            piece.numMoves = 0
+
+        
 class Queen(Piece):
     def isLegalMove(self,game,newRow,newCol):
+        # same as Bishop
         if abs(self.row - newRow) == abs(self.col - newCol):
             dir = ((newRow - self.row) // abs(newRow - self.row),
              (newCol - self.col) // abs(newCol - self.col))
@@ -167,7 +261,7 @@ class Queen(Piece):
                     return False
             return True
 
-
+        # same as Rook
         targetPiece = game.getPieceAtPosition(newRow, newCol)
         if targetPiece and targetPiece.color == self.color:
             return False
@@ -190,7 +284,7 @@ class Queen(Piece):
                         return False
                 return True
             if self.row > newRow:
-                for i in range(self.row + 1, newRow):
+                for i in range(newRow + 1, self.row):
                     if game.getPieceAtPosition(i, self.col):
                         return False
                 return True
@@ -205,7 +299,7 @@ class ChessGame(object):
 
         # record all the moves
         self.moves = []
-
+        self.board = {}
         # captured pieces
         self.captured = []
         self.gameOver = False
@@ -239,14 +333,16 @@ class ChessGame(object):
         self.pieces.append(Rook(7, 7, 'Rook', 'White'))
 
         # Queen
-        self.pieces.append(Queen(0, 4, 'Queen', 'Black'))
-        self.pieces.append(Queen(7, 4, 'Queen', 'White'))        
+        self.pieces.append(Queen(0, 3, 'Queen', 'Black'))
+        self.pieces.append(Queen(7, 3, 'Queen', 'White'))        
 
 
         # King
-        self.pieces.append(King(0, 3, 'King', 'Black'))
-        self.pieces.append(King(7, 3, 'King', 'White'))
+        self.pieces.append(King(0, 4, 'King', 'Black'))
+        self.pieces.append(King(7, 4, 'King', 'White'))
 
+        for piece in self.pieces:
+            self.board[(piece.row, piece.col)] = piece
 
     def getPieces(self):
         return self.pieces
@@ -258,13 +354,18 @@ class ChessGame(object):
             self.pieces.remove(targetPiece)
             self.captured.append(targetPiece)
         self.moves.append((piece, piece.row, piece.col,
-                          newRow, newCol, targetPiece is not None))
+
+        oldRow, oldCol = piece.getPosition()
         piece.move(newRow,newCol)
 
         # if pawn at promotion position, then, promote to queen
         if piece.name == 'Pawn':
             if piece.checkForPromotion():
                 self.promotePiece(piece)
+        elif piece.name == 'King':
+            if abs(oldCol - newCol) == 2:
+                piece.handleCastleRookMove(self, oldCol)
+                
     
     # Useful for simulations and AI, where we may not want a move to be reflected in a game
     def undoLastMove(self):
@@ -275,16 +376,22 @@ class ChessGame(object):
         piece, oldRow, oldCol, row, col, hasCapture = self.moves.pop()
         if oldRow == row and oldCol == col:
             # turn the queen to pawn
-            self.undoPromote(piece)
-            # undo the Pawn move
-            self.undoLastMove()
+            self.undoPromote(piece, self.captured.pop())
             return
 
         if hasCapture:
             targetPeice = self.captured.pop()
             self.pieces.append(targetPeice)
-        piece.move(oldRow, oldCol)
-    
+        piece.move(oldRow, oldCol, isUndo=True)
+        if piece.name == 'King' and abs(oldCol - col) == 2:
+            piece.handleCastleRookUndo(self, col)
+
+    def undoPromote(self, queen, pawn):
+        self.pieces.remove(queen)
+        self.pieces.append(pawn)
+        # undo the Pawn's move before promoting to Queen
+        self.undoLastMove()
+
 
     def inCheck(self, color):
         ''' check if the specified player is in check '''
@@ -302,7 +409,7 @@ class ChessGame(object):
         '''
         assert self.inCheck(color), "expect inCheck position"
         moves = self.getAllLegalMoves(color)
-        print(moves)
+        # print(moves)
         return len(moves) == 0
 
 
@@ -314,17 +421,15 @@ class ChessGame(object):
     def promotePiece(self,piece):
         row = piece.row
         col = piece.col
+        # only promote to Queen
         queen = Queen(row, col, 'Queen', piece.color)
         self.pieces.remove(piece)
+        self.captured.append(piece)
         self.pieces.append(queen)
         
-        # A special move: pawn to Queen promotion
-        self.moves.append((queen, row, col, row, col, False))
+        # A special move: pawn to Queen promotion, row and col unchanged
+        self.moves.append((queen, row, col, row, col, True))
     
-    def undoPromote(self, queen):
-        self.pieces.remove(queen)
-        self.pieces.append(Pawn(queen.row, queen.col, 'Pawn', queen.color))
-        
 
     def movePiece(self, piece, newRow, newCol, aiMode=False, simulate=False):
         ''' Move a piece to the new position '''
@@ -407,6 +512,7 @@ class ChessGame(object):
                     for col in range(boardSize):
                         if self.movePiece(piece, row, col, aiMode=False, simulate=True):
                             legalMoves.append((piece,row,col))
+                            
         return legalMoves
 
 

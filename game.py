@@ -35,7 +35,9 @@ class MyApp(App):
         self.initializePieces()
         self.okToShowGameOver = True
         self.drawSplashScreen = True
-
+        self.toCallAI = False
+        self.aiTime = 0
+        self.aiMoves = 0
 
     def inFlippedView(self):
         return not self.aiMode and not self.whiteTurn
@@ -149,43 +151,24 @@ class MyApp(App):
             row = chess.boardSize - 1 - row
             col = chess.boardSize - 1 - col
         
-        if self.selectedPiece:
-            if ((self.whiteTurn and self.selectedPiece.color == 'White') or \
-               (not self.whiteTurn and self.selectedPiece.color == 'Black')) and not self.aiMode:
-                if self.chessGame.movePiece(self.selectedPiece, row, col):
-                    self.moves.append((row,col,self.selectedPiece.color))
-                    self.whiteTurn = not self.whiteTurn
-
-                    self.flipBoard()
-                     
+        if self.selectedPiece:                   
             if self.aiMode:
                 if (self.whiteTurn and self.selectedPiece.color == 'White'):
                     if self.chessGame.movePiece(self.selectedPiece, row, col):
                         self.moves.append((row,col,self.selectedPiece.color))
                         self.whiteTurn = not self.whiteTurn
-                        move = self.ai.nextMove()
-                        if move is None:
-                            print("You win!")
-                            self.showMessage("Congrats, you win!!")
-                            return
-                        piece,AIrow,AIcol = move
-                        
-                        print("AI move: ", piece, AIrow,AIcol)
-                        print("current move# ", len(self.chessGame.moves))
-                    
-                        self.chessGame.movePiece(piece, AIrow, AIcol)
-                        if self.chessGame.gameOver:
-                            self.showMessage(self.chessGame.winner + " wins!")
-                        print(f'Score: {self.ai.getScore()}')
-                        self.outlineRow = AIrow
-                        self.outlineCol = AIcol
-                        self.whiteTurn = not self.whiteTurn
-                        return
+                        self.toCallAI = True
+            elif ((self.whiteTurn and self.selectedPiece.color == 'White') or \
+               (not self.whiteTurn and self.selectedPiece.color == 'Black')):
+                if self.chessGame.movePiece(self.selectedPiece, row, col):
+                    self.moves.append((row,col,self.selectedPiece.color))
+                    self.whiteTurn = not self.whiteTurn
+
+                    self.flipBoard()
 
         self.selectedPiece = self.chessGame.getPieceAtPosition(row, col)
 
     def timerFired(self):
-
         if self.chessGame.gameOver and self.okToShowGameOver:
             self.showMessage(self.chessGame.winner + " wins!")
             self.okToShowGameOver = False 
@@ -193,8 +176,40 @@ class MyApp(App):
         #    self.toFlip -= 1
         #    if self.toFlip == 0:
 
+        if self.aiMode and self.toCallAI:
+            self.toCallAI = False
+            self.makeAIMove()
             
-                   
+            
+    def makeAIMove(self):
+        assert not self.whiteTurn, "ai is black"
+        
+        start = time.time()
+        move = self.ai.nextMove()
+        end = time.time()
+        self.updateAITime(end - start)
+        if move is None:
+            print("You win!")
+            self.showMessage("Congrats, you win!!")
+            return
+        piece,AIrow,AIcol = move
+
+        #print("AI move: ", piece, AIrow,AIcol)
+        #print("current move# ", len(self.chessGame.moves))
+
+        self.chessGame.movePiece(piece, AIrow, AIcol)
+
+        self.outlineRow = AIrow
+        self.outlineCol = AIcol
+        self.whiteTurn = not self.whiteTurn
+
+    def updateAITime(self, duration):
+        self.aiMoves +=1
+        self.aiTime += duration
+        print(f"ai move time {duration}, avg={self.aiTime/self.aiMoves}")
+
+
+        
     #similar to getCell from lecture, just without margins
     def getCell(self, x, y):
         return int(y/self.cellSize), int(x/self.cellSize)
