@@ -10,6 +10,8 @@ import sys
 boardSize = 8
 
 class Piece(ABC):
+    POINTS = {'Pawn': 10, 'Knight': 30, 'Bishop': 30,
+              'Rook': 50, 'Queen': 90, 'King': 200} 
     def __init__(self, row, col, name, color):
         self.row = row
         self.col = col
@@ -26,18 +28,44 @@ class Piece(ABC):
     def getOpponentColor(self):
         return 'Black' if self.color == 'White' else 'White'
 
+    @abstractmethod
+    def getPossibleMoves(self):
+        '''
+        All pieces have possible moves, but it differs from piece to piece. 
+        Only checks possible moves without regard to other pieces
+        '''
+        return []
+
+    def getLegalMoves(self, game, fullValidate=True):
+        moves = []
+        
+        for row, col in self.getPossibleMoves():
+            if self.isLegalMove(game, row, col):
+                value = 0
+                piece = game.getPieceAtPosition(row, col)
+                if piece:
+                    if piece.color == self.color:
+                        continue
+                    else:
+                        value = self.POINTS[piece.name]
+                if fullValidate:
+                    if game.validateMove(self, row, col):
+                        moves.append((self, row, col, value))        
+                else:
+                    moves.append((self, row, col, value))           
+        return moves
+    
     def __str__(self):
-        return self.getShortName()
+        return self.getShortName() + f"{self.row}-{self.col}"
+
+    def __repr__(self):
+        return self.getShortName() + f"{self.row}-{self.col}"
 
     @abstractmethod
     def isLegalMove(self, game, newRow, newCol):
-        ''' check if it is leagal to move to the new position.
+        ''' check if it is legal to move to the new position.
             A legal move varies from piece to piece, to be implemented
             in the subclasses.
-        Args:
-         game: the ChessGame object. This is use to query the piece at
-            a position.
-         newRow, newCol: the new position to move to.
         '''
         return False
 
@@ -49,7 +77,38 @@ class Piece(ABC):
             self.numMoves -= 1
         else:
             self.numMoves += 1
+
+    def getDiagonalMoves(self, limit=7):
+        moves = []
         
+        row = self.row
+        col = self.col
+        for i in range(1, limit+1):
+            if row+i < 8 and col+i < 8:
+                moves.append((row+i, col+i))
+            if row-i >= 0 and col-i >= 0:
+                moves.append((row-i, col-i))
+            if row+i < 8 and col-i >=0:
+                moves.append((row+i, col-i))
+            if row-i >= 0 and col+i <8:
+                moves.append((row-i, col+i))
+        return moves
+
+    def getLineMoves(self, limit=7):
+        moves = []
+        
+        row = self.row
+        col = self.col
+        for i in range(1, limit+1):
+            if row+i < 8:
+                moves.append((row+i, col))
+            if row-i >= 0:
+                moves.append((row-i, col))
+            if col-i >=0:
+                moves.append((row, col-i))
+            if col+i <8:
+                moves.append((row, col+i))
+        return moves
 
 class Bishop(Piece):
     def isLegalMove(self,game,newRow,newCol):
@@ -63,6 +122,9 @@ class Bishop(Piece):
             return True
         return False
 
+    def getPossibleMoves(self):
+        return self.getDiagonalMoves()
+        
 class Pawn(Piece):
     def isLegalMove(self, game, newRow, newCol):
         if self.color == 'White':
@@ -113,13 +175,28 @@ class Pawn(Piece):
             return True
         return False
 
+    def getPossibleMoves(self):
+        # may contain illegal moves.
+        return self.getLineMoves(2) + self.getDiagonalMoves(1)
+
 class Knight(Piece):
     def isLegalMove(self,game,newRow,newCol):
         if (abs(self.row - newRow) == 1 and abs(self.col - newCol) == 2) or (abs(self.row - newRow) == 2 and abs(self.col - newCol) == 1):
             return True
         return False
 
-
+    def getPossibleMoves(self):
+        # may contain illegal moves.
+        moves=[]
+        row = self.row
+        col = self.col
+        delta = [(-1,2),(1,2),(-1,-2),(1,-2),(-1,2),
+                 (2,-1),(2,1),(-2,-1),(-2,1),(2,-1)]
+        for d in delta:
+            if row+d[0] < 8 and row+d[0] >=0 and col+d[1] < 8 and col+d[1] >=0:
+                moves.append((row+d[0], col+d[1]))
+        return moves
+    
 class Rook(Piece):
     def isLegalMove(self,game,newRow,newCol):
         # check if there is a piece at the new postion.
@@ -153,7 +230,10 @@ class Rook(Piece):
 
         return False
 
-
+    def getPossibleMoves(self):
+        # may contain illegal moves.
+        return self.getLineMoves(8)
+    
 class King(Piece):
     def isLegalMove(self,game,newRow,newCol):
         if  abs(self.row - newRow) <= 1 and abs(self.col - newCol) <= 1:
@@ -225,8 +305,9 @@ class King(Piece):
 
         piece = game.getPieceAtPosition(self.row, col)
         if piece:
+            del game.board[piece.getPosition()]
             piece.move(self.row, newCol)
-
+            game.board[(self.row, newCol)] = piece
 
     # called after the King made a castle move
     def handleCastleRookUndo(self,game,oldKingCol):
@@ -244,9 +325,14 @@ class King(Piece):
 
         piece = game.getPieceAtPosition(self.row, col)
         if piece:
+            del game.board[piece.getPosition()]
             piece.move(self.row, newCol, True)
+            game.board[(self.row, newCol)] = piece
             piece.numMoves = 0
 
+    def getPossibleMoves(self):
+        # may contain illegal moves.
+        return self.getLineMoves(2) + self.getDiagonalMoves(1)
         
 class Queen(Piece):
     def isLegalMove(self,game,newRow,newCol):
@@ -291,12 +377,16 @@ class Queen(Piece):
 
         return False
 
-
+    def getPossibleMoves(self):
+        # may contain illegal moves.
+        return self.getLineMoves() + self.getDiagonalMoves()
+    
 class ChessGame(object):
 
     def __init__(self):
         self.pieces = []
-
+        self.blackPieces = []
+        self.whitePieces = []
         # record all the moves
         self.moves = []
         self.board = {}
@@ -324,7 +414,9 @@ class ChessGame(object):
         self.pieces.append(Knight(0, 6, 'Knight', 'Black'))
         self.pieces.append(Knight(7, 1, 'Knight', 'White'))
         self.pieces.append(Knight(7, 6, 'Knight', 'White'))
-
+        # Queen
+        self.pieces.append(Queen(0, 3, 'Queen', 'Black'))
+        self.pieces.append(Queen(7, 3, 'Queen', 'White'))        
 
         # Rook
         self.pieces.append(Rook(0, 0, 'Rook', 'Black'))
@@ -332,32 +424,33 @@ class ChessGame(object):
         self.pieces.append(Rook(7, 0, 'Rook', 'White'))
         self.pieces.append(Rook(7, 7, 'Rook', 'White'))
 
-        # Queen
-        self.pieces.append(Queen(0, 3, 'Queen', 'Black'))
-        self.pieces.append(Queen(7, 3, 'Queen', 'White'))        
-
-
         # King
         self.pieces.append(King(0, 4, 'King', 'Black'))
         self.pieces.append(King(7, 4, 'King', 'White'))
 
-        for piece in self.pieces:
-            self.board[(piece.row, piece.col)] = piece
-
+        self.rebuildBoard()
+        
     def getPieces(self):
         return self.pieces
-    
+
+    def rebuildBoard(self):
+        for piece in self.pieces:
+            self.board[piece.getPosition()] = piece
+
     # Assumes movement passes all the prelimianry rules and changes the game state
     def makeMove(self,piece,newRow,newCol,targetPiece):
-        
         if targetPiece:
             self.pieces.remove(targetPiece)
             self.captured.append(targetPiece)
         self.moves.append((piece, piece.row, piece.col,
+                           newRow, newCol, targetPiece is not None))
 
         oldRow, oldCol = piece.getPosition()
         piece.move(newRow,newCol)
 
+        del self.board[(oldRow, oldCol)]
+        self.board[(newRow,newCol)] = piece
+                       
         # if pawn at promotion position, then, promote to queen
         if piece.name == 'Pawn':
             if piece.checkForPromotion():
@@ -371,24 +464,31 @@ class ChessGame(object):
     def undoLastMove(self):
         if len(self.moves) == 0:
             print("nothing to undo")
-            return
+            return False
         
         piece, oldRow, oldCol, row, col, hasCapture = self.moves.pop()
         if oldRow == row and oldCol == col:
             # turn the queen to pawn
             self.undoPromote(piece, self.captured.pop())
-            return
+            return True
 
         if hasCapture:
-            targetPeice = self.captured.pop()
-            self.pieces.append(targetPeice)
+            targetPiece = self.captured.pop()
+            self.pieces.append(targetPiece)
+            self.board[targetPiece.getPosition()] = targetPiece
+        else:
+            del self.board[(row, col)]
         piece.move(oldRow, oldCol, isUndo=True)
+        self.board[(oldRow, oldCol)] = piece
         if piece.name == 'King' and abs(oldCol - col) == 2:
             piece.handleCastleRookUndo(self, col)
+
+        return True
 
     def undoPromote(self, queen, pawn):
         self.pieces.remove(queen)
         self.pieces.append(pawn)
+        self.board[pawn.getPosition()] = pawn
         # undo the Pawn's move before promoting to Queen
         self.undoLastMove()
 
@@ -401,20 +501,29 @@ class ChessGame(object):
                 return True
         return False
 
+    # for loading
+    def rebuildFromMoves(self,moves):
+        ''' Rebuild the game state from the move and return the color of the last move '''
+        color = 'White'
+        for move in moves:
+            _, oldRow, oldCol, newRow, newCol, _ = move
+            piece = self.getPieceAtPosition(oldRow, oldCol)
+            self.movePiece(piece, newRow, newCol)
+            color = piece.color
+        return color
+
 
     def checkMate(self, color):
         ''' Check if player with given color is in checkmate by the other player
         returns True if it is in checkMate, false otherwise
         precondition: the player is in check
         '''
-        assert self.inCheck(color), "expect inCheck position"
         moves = self.getAllLegalMoves(color)
         # print(moves)
         return len(moves) == 0
 
 
     def printMoves(self):
-        print("moving of the game")
         for move in self.moves:
             print(move)
 
@@ -426,24 +535,26 @@ class ChessGame(object):
         self.pieces.remove(piece)
         self.captured.append(piece)
         self.pieces.append(queen)
+        self.board[(row, col)] = queen
         
         # A special move: pawn to Queen promotion, row and col unchanged
         self.moves.append((queen, row, col, row, col, True))
     
-
-    def movePiece(self, piece, newRow, newCol, aiMode=False, simulate=False):
-        ''' Move a piece to the new position '''
+    def validateMove(self, piece, newRow, newCol):
         tempRow, tempCol = piece.getPosition()
         
         if newRow == tempRow and newCol == tempCol:
+            #print("move cannot be the same pos")
             return False
 
         # need to be in the range
         if newRow >= boardSize or newRow < 0 or newCol < 0 or newCol >= boardSize:
+            assert False, "out of rance (0-7)"
             return False
 
         # check if the move is legal for the piece
         if not piece.isLegalMove(self, newRow, newCol):
+            #print(" piece isLegaMove == False")
             return False
         
         # get the piece, if any, at the new position
@@ -451,6 +562,7 @@ class ChessGame(object):
         if targetPiece:
             # cannot move if the target piece has same color
             if targetPiece.color == piece.color:
+                #print(" piece same color capture not allowed")
                 return False
         # As of now, we are good to make a move. 
         # Move the piece to the new position
@@ -460,6 +572,71 @@ class ChessGame(object):
         if self.inCheck(piece.color):
             # undo the capture if a capture would have happened
             self.undoLastMove()
+            # print(" piece move would end with Check")
+            return False
+
+        # Now, we have made the move, but we still undo if it is a simulation.
+        # We don't want the simulated move to show up in the actual game.
+        self.undoLastMove()
+        return True   
+
+    def movePieceNoCheck(self,  piece, newRow, newCol, aiMode=False, simulate=False):
+        # get the piece, if any, at the new position
+        targetPiece = self.getPieceAtPosition(newRow, newCol)
+        if targetPiece:
+            # cannot move if the target piece has same color
+            if targetPiece.color == piece.color:
+                print(" piece same color capture not allowed")
+                return False
+        # As of now, we are good to make a move. 
+        # Move the piece to the new position
+        self.makeMove(piece,newRow,newCol,targetPiece)
+        otherColor = piece.getOpponentColor()
+        # after player makes move, it is now the other player's turn.
+        # See if other player is in checkmate
+        if self.inCheck(otherColor) and not aiMode:
+            if not simulate:
+                if self.checkMate(otherColor):
+                    self.endGame(otherColor)
+                    return True
+        #print(f'New Position: {newRow}, {newCol}')
+        return True
+
+        
+    def movePiece(self, piece, newRow, newCol, aiMode=False, simulate=False):
+        ''' Move a piece to the new position '''
+        tempRow, tempCol = piece.getPosition()
+        
+        if newRow == tempRow and newCol == tempCol:
+            print("move cannot be the same pos")
+            return False
+
+        # need to be in the range
+        if newRow >= boardSize or newRow < 0 or newCol < 0 or newCol >= boardSize:
+            assert False, "out of rance (0-7)"
+            return False
+
+        # check if the move is legal for the piece
+        if not piece.isLegalMove(self, newRow, newCol):
+            print(" piece isLegaMove == False", piece)
+            return False
+        
+        # get the piece, if any, at the new position
+        targetPiece = self.getPieceAtPosition(newRow, newCol)
+        if targetPiece:
+            # cannot move if the target piece has same color
+            if targetPiece.color == piece.color:
+                print(" piece same color capture not allowed")
+                return False
+        # As of now, we are good to make a move. 
+        # Move the piece to the new position
+        self.makeMove(piece,newRow,newCol,targetPiece)
+                
+        # undo the tentative move if that would result in check.
+        if self.inCheck(piece.color):
+            # undo the capture if a capture would have happened
+            self.undoLastMove()
+            # print(" piece move would end with Check")
             return False
 
         # Now, we have made the move, but we still undo if it is a simulation.
@@ -471,14 +648,25 @@ class ChessGame(object):
         otherColor = piece.getOpponentColor()
         # after player makes move, it is now the other player's turn.
         # See if other player is in checkmate
-        if self.inCheck(otherColor) and not aiMode:
-            if not simulate:
-                if self.checkMate(otherColor):
-                    self.endGame(otherColor)
-                    return True
+        if not aiMode and not simulate:
+            self.checkForStatus(otherColor)
+
         #print(f'New Position: {newRow}, {newCol}')
         return True
-       
+
+    # return True if game is over for otherColor
+    def checkForStatus(self, otherColor):
+        print("checking for checkmate ", otherColor)
+        if self.inCheck(otherColor):
+            if self.checkMate(otherColor):
+                self.endGame(otherColor)
+                return True
+            else:
+                moves=self.getAllLegalMoves(otherColor)
+                for move in moves:
+                    print(move)
+        return False
+
     def endGame(self,loser):
         self.gameOver = True
         self.loser = loser
@@ -502,17 +690,14 @@ class ChessGame(object):
             if piece.row == row and piece.col == col:
                 return piece
         return None
-    
 
-    def getAllLegalMoves(self,color):
+    def getAllLegalMoves(self,color, fullValidate=True):
         legalMoves = []
         for piece in self.pieces:
             if piece.color == color:
-                for row in range(boardSize):
-                    for col in range(boardSize):
-                        if self.movePiece(piece, row, col, aiMode=False, simulate=True):
-                            legalMoves.append((piece,row,col))
-                            
+                legalMoves.extend(piece.getLegalMoves(self))
+        # prioritze moves that kill a piece or have points
+        legalMoves.sort(key=lambda f: f[2], reverse=True)
         return legalMoves
 
 

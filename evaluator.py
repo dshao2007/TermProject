@@ -7,6 +7,7 @@
 # For example, a player's king on the enemy side is worth negative points, as 
 # that can be very risky 
 # I got the numbers from https://www.freecodecamp.org/news/simple-chess-ai-step-by-step-1d55a9266977/
+# I created my own heuristic go for a late game situation. I increased priority for the pawns to try to get a promotion.
 class ChessEval(object):
 
     PawnWhiteWt = [

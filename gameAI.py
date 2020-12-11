@@ -13,75 +13,73 @@ class ChessAI(object):
         self.color = color
         self.drunkMode = False
         self.points = {'Pawn': 10, 'Knight': 30, 'Bishop': 30, 'Rook': 50, 'Queen': 90, 'King': 200} 
+        self.depth = 3
+    
+    def changeLevel(self,level):
+        self.depth = level + 1
 
-    def nextMove(self):
-        results = self.game.getAllLegalMoves(self.color)
+    def getLevel(self):
+        return self.depth - 1
+    
+    def nextMove(self, playerColor=None):
+        if playerColor is None:
+            playerColor = self.color
+        results = self.game.getAllLegalMoves(playerColor, fullValidate=False)
         if len(results) == 0:
             return None
-        
-        if self.drunkMode:
-           # return a random move
-           index = random.randint(0,len(results) - 1)
-           return results[index]
-        
-        move, _ = self.minimax(-self.INF, self.INF, self.color)
+        move, _ = self.minimax(-self.INF, self.INF, playerColor, playerColor, self.depth)
         return move    
     
 
     # Minimax is a completely new concept to me, and I the reference from
     # https://www.chessprogramming.org/Search to learn about it
     # All of the code is mine, with the exception of alpha beta pruning, which is
-    # a standard template I got from the website. I am still getting it to work
-    def minimax(self, alpha, beta, color, depth=3):
-        results = self.game.getAllLegalMoves(color)
+    # a standard template I got from the website. 
+    def minimax(self, alpha, beta, color, playerColor, depth):
+        results = self.game.getAllLegalMoves(color, fullValidate=False)
         score = self.getScore()
+        if playerColor == 'White':
+            score = -score
+        
         if depth == 0:
-            #print("ai move: depth 0")
-            #print(self.game.printMoves())
             return None, score
         
-        '''if self.game.inCheck('White') and self.game.checkMate('White'):
-            return score
-        if self.game.inCheck('Black') and self.game.checkMate('Black'):
-            return score
-        '''
-
         if len(results) == 0:
-            # print("ai move: no legal moves")
             return None, score
         
         if color == 'White':
             otherColor = 'Black'
         else:
             otherColor = 'White'
-        if self.color == color:        
+        if playerColor == color:
             move = None
             maxVal = -self.INF
-            # print(f'{depth} max the move for {color}')
             for i in range(len(results)):
-                self.game.movePiece(results[i][0], results[i][1], results[i][2],
-                                    aiMode=True, simulate=False)
+                if self.game.movePiece(results[i][0], results[i][1], results[i][2],
+                                       aiMode=True, simulate=False):
                 
-                _, eval = self.minimax(alpha, beta, otherColor, depth - 1)
-                # maxVal = max(eval, maxVal)
-                if eval > maxVal:
-                    move = results[i]
-                    maxVal = eval
-                self.game.undoLastMove()
-                alpha = max(alpha, maxVal)
-                '''if beta <= alpha:
-                    break'''
+                    _, eval = self.minimax(alpha, beta, otherColor, playerColor, depth - 1)
+                    # maxVal = max(eval, maxVal)
+                    if eval > maxVal:
+                        move = results[i]
+                        maxVal = eval
+                    self.game.undoLastMove()
+                    alpha = max(alpha, maxVal)
+                    if beta <= alpha:
+                        break
+                else:
+                    pass
             # moves.append(move)
             return (move, maxVal)
         else:
             minVal = self.INF
-            # print(f'{depth} min the move for {color}')
             move = None
             for i in range(len(results)):
-                self.game.movePiece(results[i][0], results[i][1], results[i][2],
-                                    aiMode=True, simulate=False)
+                if not self.game.movePiece(results[i][0], results[i][1], results[i][2],
+                                           aiMode=True, simulate=False):
+                    continue
                 
-                _, eval = self.minimax(alpha, beta, otherColor, depth - 1)
+                _, eval = self.minimax(alpha, beta, otherColor, playerColor, depth - 1)
                 self.game.undoLastMove()
                 # minVal = min(eval, minVal)
                 if eval < minVal:
@@ -89,8 +87,8 @@ class ChessAI(object):
                     move = results[i]
                 beta = min(beta, minVal)
                 
-                '''if beta <= alpha:
-                    break'''
+                if beta <= alpha:
+                    break
             return move, minVal
 
     def getScore(self):
@@ -114,6 +112,7 @@ class ChessAI(object):
         else:
             return b - w
     
+    # Assign large score to checkmate so AI goes for the win
     def getWhiteScore(self):
         score = 0
         for piece in self.game.getPieces():
