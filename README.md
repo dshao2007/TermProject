@@ -1,2 +1,1 @@
-# TermProject
 Chess
